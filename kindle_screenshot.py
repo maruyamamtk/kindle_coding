@@ -2,71 +2,10 @@ import pyautogui
 import time
 import os
 from datetime import datetime
-from PIL import Image
-from openai import OpenAI
 from dotenv import load_dotenv
-from capture_icons import capture_icons
-import base64
-import io
 
 # 環境変数の読み込み
 load_dotenv()
-
-def encode_image(image_path):
-    """画像をbase64エンコードする"""
-    with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode('utf-8')
-
-def get_book_names():
-    """Kindleのライブラリから本の名称を取得する"""
-    try:
-        # ライブラリ画面のスクリーンショットを撮影
-        screenshot = pyautogui.screenshot()
-        screenshot_path = 'book_icon.png'
-        screenshot.save(screenshot_path)
-        print("ライブラリ画面のスクリーンショットを保存しました")
-        
-        # 画像をbase64エンコード
-        base64_image = encode_image(screenshot_path)
-        
-        # OpenAI APIを使用して画像からテキストを抽出
-        client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-        
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": "この画像はKindleのライブラリ画面です。表示されている本のタイトルを全てリストアップしてください。タイトルを抽出し、余分な情報は含めないでください。"
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{base64_image}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            max_tokens=1000
-        )
-        
-        # レスポンスから本のタイトルを抽出
-        book_titles = response.choices[0].message.content.split('\n')
-        book_titles = [title.strip() for title in book_titles if title.strip()]
-        
-        print("検出された本のタイトル:")
-        for i, title in enumerate(book_titles, 1):
-            print(f"{i}. {title}")
-        
-        return book_titles
-        
-    except Exception as e:
-        print(f"本の名称取得中にエラーが発生しました: {e}")
-        return []
 
 def open_kindle():
     """Kindleアプリケーションを開く"""
@@ -86,7 +25,7 @@ def open_kindle():
         
         time.sleep(1)
         pyautogui.press('enter')
-        time.sleep(20)  # Kindleが起動するのを待つ
+        time.sleep(10)  # Kindleが起動するのを待つ
         
         return True
             
@@ -95,16 +34,12 @@ def open_kindle():
         print("Kindleアプリケーションがインストールされているか確認してください。")
         return False
 
-def take_screenshot():
+def take_screenshot(book_title):
     """現在表示されているページのスクリーンショットを撮影する"""
     try:
-        # スクリーンショットを保存するディレクトリを作成
-        if not os.path.exists('screenshots_books'):
-            os.makedirs('screenshots_books')
-        
         # タイムスタンプ付きのファイル名を生成
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f'screenshots_books/kindle_page_{timestamp}.png'
+        filename = f'screenshots_books/{book_title}/kindle_page_{timestamp}.png'
         
         # スクリーンショットを撮影
         screenshot = pyautogui.screenshot()
@@ -114,35 +49,22 @@ def take_screenshot():
     except Exception as e:
         print(f"スクリーンショットの撮影中にエラーが発生しました: {e}")
 
-def main():
-    print("Kindleの自動スクリーンショット撮影を開始します...")
-    
+### 一連の処理を実行する関数
+def main():    
     # Kindleを開く
     if not open_kindle():
         return
-    
-    # 本の一覧を取得
-    book_titles = get_book_names()
-    
-    if not book_titles:
-        print("本の一覧を取得できませんでした。")
-        return
-    
-    # 最初の本を選択（必要に応じて変更可能）
-    selected_book = book_titles[0]
-    print(f"選択された本: {selected_book}")
-    
-    # 本をクリックして開く
-    try:
-        # 最初の本の領域をクリック
-        pyautogui.click(x=100, y=100)  # 適切な座標に調整が必要
-        time.sleep(3)  # 本が開くのを待つ
-    except Exception as e:
-        print(f"本の選択中にエラーが発生しました: {e}")
-        return
-    
+
+    # 検索する本のタイトルを入力
+    print("スクリーンショットを開始します。")
+    book_title = input("検索する本のタイトルを入力してください: ")
+
+    # スクリーンショットを保存するディレクトリを作成
+    if not os.path.exists(f'screenshots_books/{book_title}'):
+        os.makedirs(f'screenshots_books/{book_title}')
+
     # スクリーンショットを撮影
-    take_screenshot()
+    take_screenshot(book_title)
     
     print("処理が完了しました。")
 
