@@ -179,7 +179,14 @@ def main():
                 print("ページめくりに失敗しました。処理を終了します。")
                 break
     
-    print("処理が完了しました。")
+    print("スクリーンショットの処理が完了しました。")
+    print("PDFへの変換を開始します...")
+    
+    # screenshot2pdf.pyの処理を実行
+    from screenshot2pdf import convert_to_pdf
+    convert_to_pdf(book_title)
+    
+    print("すべての処理が完了しました。")
 
 if __name__ == "__main__":
     main() 
