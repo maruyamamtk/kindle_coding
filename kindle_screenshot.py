@@ -2,15 +2,47 @@ import pyautogui
 import time
 import os
 import random
+import re
 from datetime import datetime
 from dotenv import load_dotenv
 from PIL import Image
 import numpy as np
 import win32gui
 import win32con
+from screenshot2pdf import convert_to_pdf
+from screenshot2audio import convert_to_audio
+import pygetwindow as gw
 
 # 環境変数の読み込み
 load_dotenv()
+
+def sanitize_folder_name(book_title):
+    """書籍名を安全なフォルダ名に変換する"""
+    # Windowsで使用できない文字を除去または置換
+    # 使用できない文字: < > : " | ? * \ /
+    invalid_chars = r'[<>:"|?*\\/]'
+    
+    # 使用できない文字を除去
+    safe_name = re.sub(invalid_chars, '', book_title)
+    
+    # 先頭と末尾の空白、ドットを除去
+    safe_name = safe_name.strip(' .')
+    
+    # 連続する空白を単一の空白に置換
+    safe_name = re.sub(r'\s+', ' ', safe_name)
+    
+    # 空白をアンダースコアに置換（オプション）
+    safe_name = safe_name.replace(' ', '_')
+    
+    # 空文字列の場合はデフォルト名を使用
+    if not safe_name:
+        safe_name = "unknown_book"
+    
+    # 長すぎる場合は短縮
+    if len(safe_name) > 100:
+        safe_name = safe_name[:100]
+    
+    return safe_name
 
 def get_kindle_window():
     """Kindleウィンドウのハンドルを取得する"""
@@ -35,6 +67,15 @@ def focus_kindle_window():
         time.sleep(1)  # フォーカスが確実に移るまで待機
         return True
     return False
+
+# Kindleウィンドウを最大化
+def maximize_kindle_window():
+    windows = gw.getWindowsWithTitle('Kindle')
+    if windows:
+        win = windows[0]
+        if not win.isMaximized:
+            win.maximize()
+            time.sleep(1)  # 最大化の反映待ち
 
 def open_kindle():
     """Kindleアプリケーションを開く"""
@@ -63,17 +104,20 @@ def open_kindle():
         print("Kindleアプリケーションがインストールされているか確認してください。")
         return False
 
-def take_screenshot(book_title):
+def take_screenshot(safe_book_title):
     """現在表示されているページのスクリーンショットを撮影する"""
     try:
         # Kindleウィンドウにフォーカスを当てる
         if not focus_kindle_window():
             print("Kindleウィンドウが見つかりません。")
             return None
+        
+        # フォーカスが確実に移るまで少し待機
+        time.sleep(0.5)
             
         # タイムスタンプ付きのファイル名を生成(書籍名のフォルダを作成して格納)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f'screenshots_books/{book_title}/kindle_page_{timestamp}.png'
+        filename = f'screenshots_books/{safe_book_title}/kindle_page_{timestamp}.png'
         
         # スクリーンショットを撮影
         screenshot = pyautogui.screenshot()
@@ -89,15 +133,9 @@ def take_screenshot(book_title):
 def turn_page():
     """Kindleのページをめくる"""
     try:
-        # Kindleウィンドウにフォーカスを当てる
-        if not focus_kindle_window():
-            print("Kindleウィンドウが見つかりません。")
-            return False
-            
-        # 右矢印キーで次のページへ
+        # 右矢印キーでページをめくる（最も確実な方法）
         pyautogui.press('right')
-        # ランダムな待機時間（0.5秒から1.5秒）
-        time.sleep(random.uniform(0.5, 1.5))
+        time.sleep(1.5)  # ページ切り替えの待機時間を延長
         return True
     except Exception as e:
         print(f"ページめくり中にエラーが発生しました: {e}")
@@ -119,8 +157,9 @@ def compare_images(image1_path, image2_path):
             
         # 画像の差分を計算
         diff = np.sum(np.abs(img1_array - img2_array))
-        # 差分が一定値以下なら同じ画像とみなす
-        return diff < 5
+        # 差分の閾値を緩和（より多くの違いを許容）
+        threshold = diff / (img1_array.size * 255) * 100  # 差分の割合を計算
+        return threshold < 0.1  # 0.1%以下の差分なら同じ画像とみなす
         
     except Exception as e:
         print(f"画像比較中にエラーが発生しました: {e}")
@@ -131,13 +170,19 @@ def main():
     if not open_kindle():
         return
 
+    # ここでKindleウィンドウを最大化＆フォーカス（最初だけ）
+    maximize_kindle_window()
+    focus_kindle_window()
+
     # 検索する本のタイトルを入力
     print("スクリーンショットを開始します。")
     book_title = input("検索する本のタイトルを入力してください: ")
 
     # スクリーンショットを保存するディレクトリを作成
-    if not os.path.exists(f'screenshots_books/{book_title}'):
-        os.makedirs(f'screenshots_books/{book_title}')
+    safe_book_title = sanitize_folder_name(book_title)
+    print(f"フォルダ名: {safe_book_title}")
+    if not os.path.exists(f'screenshots_books/{safe_book_title}'):
+        os.makedirs(f'screenshots_books/{safe_book_title}')
 
     # スクリーンショットの履歴を保存
     screenshot_history = []
@@ -153,7 +198,7 @@ def main():
     
     while True:
         # スクリーンショットを撮影
-        current_screenshot = take_screenshot(book_title)
+        current_screenshot = take_screenshot(safe_book_title)
         
         if current_screenshot:
             screenshot_history.append(current_screenshot)
@@ -174,19 +219,24 @@ def main():
                 os.remove(screenshot_history[-1])
                 break
             
+            # ページをめくる前に少し待機
+            time.sleep(0.5)
+            
             # ページをめくる
             if not turn_page():
                 print("ページめくりに失敗しました。処理を終了します。")
                 break
     
     print("スクリーンショットの処理が完了しました。")
+    # screenshot2pdf.pyの処理を実行しpdfに変換
     print("PDFへの変換を開始します...")
-    
-    # screenshot2pdf.pyの処理を実行
-    from screenshot2pdf import convert_to_pdf
-    convert_to_pdf(book_title)
+    convert_to_pdf(safe_book_title)
+
+    # screenshot2audio.pyの処理を実行し音声に変換
+    # print("音声ファイルへの変換を開始します...")
+    # convert_to_audio(book_title) 
     
     print("すべての処理が完了しました。")
 
 if __name__ == "__main__":
-    main() 
+    main()  
