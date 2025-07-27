@@ -196,36 +196,40 @@ def main():
         time.sleep(1)
     print("開始します！      ")  # 余分な空白で前の行を上書き
     
+    direction = 'right'  # 最初は右方向
+    reversed_once = False
     while True:
         # スクリーンショットを撮影
         current_screenshot = take_screenshot(safe_book_title)
-        
         if current_screenshot:
             screenshot_history.append(current_screenshot)
             screenshot_count += 1
-            
+
             # 終了条件のチェック
             if screenshot_count >= 2:
                 # 直近の2枚の画像を比較
                 if compare_images(screenshot_history[-1], screenshot_history[-2]):
-                    print("同じページが検出されました。処理を終了します。")
-                    # 最後の画像を削除
-                    os.remove(screenshot_history[-1])
-                    break
-                    
+                    if not reversed_once:
+                        print("同じページが検出されました。逆方向にページをめくります。")
+                        os.remove(screenshot_history[-1])
+                        direction = 'left'  # 方向を逆に
+                        reversed_once = True
+                        pyautogui.press(direction)
+                        time.sleep(1.5)
+                        continue  # 逆方向で再度撮影
+                    else:
+                        print("同じページが検出されたため、処理を終了します。")
+                        os.remove(screenshot_history[-1])
+                        break
             if screenshot_count >= 1000:
                 print("最大撮影枚数に達しました。処理を終了します。")
-                # 最後の画像を削除
                 os.remove(screenshot_history[-1])
                 break
-            
             # ページをめくる前に少し待機
             time.sleep(0.5)
-            
-            # ページをめくる
-            if not turn_page():
-                print("ページめくりに失敗しました。処理を終了します。")
-                break
+            # directionに従ってページをめくる
+            pyautogui.press(direction)
+            time.sleep(1.5)
     
     print("スクリーンショットの処理が完了しました。")
     # screenshot2pdf.pyの処理を実行しpdfに変換
@@ -239,4 +243,4 @@ def main():
     print("すべての処理が完了しました。")
 
 if __name__ == "__main__":
-    main()  
+    main()
