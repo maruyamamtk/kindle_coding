@@ -1,0 +1,6 @@
+# screenshots_booksフォルダの内容を無視
+screenshots_books/
+screenshots_books/*
+
+# フォルダ自体は保持するが、中身は無視
+!screenshots_books/.gitkeep 
