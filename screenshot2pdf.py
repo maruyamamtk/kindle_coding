@@ -2,6 +2,10 @@ from PIL import Image
 import os
 from dotenv import load_dotenv
 
+# 毎回の実行前に仮想環境を有効化する
+# source .venv/bin/activate
+# pip install -r requirements.txt
+
 # 環境変数の読み込み
 load_dotenv()
 

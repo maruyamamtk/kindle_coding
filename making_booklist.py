@@ -6,9 +6,13 @@ import time
 import csv
 
 # --- 設定 ---
-KINDLE_FOLDER = r"C:\Users\michika\Documents\My Kindle Content"  # パスを自分の環境に合わせて変更
-CSV_OUTPUT_PATH = r"C:\Users\michika\Desktop\kindle_coding\booklist\kindle_books.csv"
+KINDLE_FOLDER = r"~/Library/Application Support/Kindle/My Kindle Content/"  # パスを自分の環境に合わせて変更
+CSV_OUTPUT_PATH = r"/Users/michika_maruyama/Desktop/kindle_coding/booklist/kindle_books.csv"
 DELAY_SECONDS = 2
+
+# 毎回の実行前に仮想環境を有効化する
+# source .venv/bin/activate
+# pip install -r requirements.txt
 
 # --- 関数 ---
 def extract_asin(filename):
