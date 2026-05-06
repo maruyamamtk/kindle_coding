@@ -7,11 +7,12 @@ from datetime import datetime
 from dotenv import load_dotenv
 from PIL import Image
 import numpy as np
-import win32gui
-import win32con
 from screenshot2pdf import convert_to_pdf
-from screenshot2audio import convert_to_audio
-import pygetwindow as gw
+import subprocess
+
+# 毎回の実行前に仮想環境を有効化する
+# source .venv/bin/activate
+# pip install -r requirements.txt
 
 # 環境変数の読み込み
 load_dotenv()
@@ -44,60 +45,35 @@ def sanitize_folder_name(book_title):
     
     return safe_name
 
-def get_kindle_window():
-    """Kindleウィンドウのハンドルを取得する"""
-    def callback(hwnd, windows):
-        if win32gui.IsWindowVisible(hwnd):
-            window_title = win32gui.GetWindowText(hwnd)
-            if "Kindle" in window_title:
-                windows.append(hwnd)
-        return True
-    
-    windows = []
-    win32gui.EnumWindows(callback, windows)
-    return windows[0] if windows else None
-
 def focus_kindle_window():
     """Kindleウィンドウにフォーカスを当てる"""
-    hwnd = get_kindle_window()
-    if hwnd:
-        # ウィンドウを前面に持ってくる
-        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-        win32gui.SetForegroundWindow(hwnd)
-        time.sleep(1)  # フォーカスが確実に移るまで待機
+    try:
+        # バンドルIDで最前面に
+        script = 'tell application id "com.amazon.Lassen" to activate'
+        subprocess.run(["osascript", "-e", script], check=False,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(1)
         return True
-    return False
+    except Exception:
+        return False
 
 # Kindleウィンドウを最大化
 def maximize_kindle_window():
-    windows = gw.getWindowsWithTitle('Kindle')
-    if windows:
-        win = windows[0]
-        if not win.isMaximized:
-            win.maximize()
-            time.sleep(1)  # 最大化の反映待ち
+    # macOSではAppleScriptで全画面化は不安定なため、ここではフォーカスのみ
+    focus_kindle_window()
 
 def open_kindle():
     """Kindleアプリケーションを開く"""
     try:
-        # Windowsの場合、スタートメニューからKindleを検索して開く
-        pyautogui.press('win')
-        time.sleep(1)
-        
-        # 英数字入力モードに切り替え
-        pyautogui.press(['capslock', 'capslock'])  # CapsLockを2回押して確実に英数字モードにする
-        time.sleep(0.5)
-        
-        # Kindleと入力（一文字ずつ確実に入力）
-        for char in 'kindle':
-            pyautogui.press(char)
-            time.sleep(0.1)
-        
-        time.sleep(1)
-        pyautogui.press('enter')
-        time.sleep(10)  # Kindleが起動するのを待つ
-        
-        return True
+        # macOS: バンドルIDで確実に起動
+        subprocess.run(["open", "-b", "com.amazon.Lassen"], check=False)
+        # 少し待ってフォーカス
+        for _ in range(30):  # 最大 ~15秒待機
+            if focus_kindle_window():
+                return True
+            time.sleep(0.5)
+        print("Kindleウィンドウが見つかりませんでした。")
+        return False
             
     except Exception as e:
         print(f"Kindleの起動中にエラーが発生しました: {e}")
@@ -130,12 +106,24 @@ def take_screenshot(safe_book_title):
         print(f"スクリーンショットの撮影中にエラーが発生しました: {e}")
         return None
 
-def turn_page():
-    """Kindleのページをめくる"""
+def turn_page(direction: str = 'right'):
+    """Kindleのページをめくる。directionは 'right' または 'left'。"""
     try:
-        # 右矢印キーでページをめくる（最も確実な方法）
-        pyautogui.press('right')
-        time.sleep(1.5)  # ページ切り替えの待機時間を延長
+        print(f"ページめくり開始: {direction}")
+        focus_kindle_window()
+        if direction == 'left':
+            key_code = 123  # 左矢印
+        else:
+            key_code = 124  # 右矢印（デフォルト）
+        script = f'tell application "System Events" to key code {key_code}'
+        print(f"実行するAppleScript: {script}")
+        result = subprocess.run(["osascript", "-e", script], 
+                               capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"AppleScript実行エラー: {result.stderr}")
+        else:
+            print("AppleScript実行成功")
+        time.sleep(1.8)
         return True
     except Exception as e:
         print(f"ページめくり中にエラーが発生しました: {e}")
@@ -209,26 +197,27 @@ def main():
             if screenshot_count >= 2:
                 # 直近の2枚の画像を比較
                 if compare_images(screenshot_history[-1], screenshot_history[-2]):
-                    if not reversed_once:
+                    # 最初の10ページ以内のみ逆方向判定を実行
+                    if screenshot_count <= 10 and not reversed_once:
                         print("同じページが検出されました。逆方向にページをめくります。")
                         os.remove(screenshot_history[-1])
                         direction = 'left'  # 方向を逆に
                         reversed_once = True
-                        pyautogui.press(direction)
+                        turn_page(direction)
                         time.sleep(1.5)
                         continue  # 逆方向で再度撮影
                     else:
                         print("同じページが検出されたため、処理を終了します。")
                         os.remove(screenshot_history[-1])
                         break
-            if screenshot_count >= 1000:
+            if screenshot_count >= 5000:
                 print("最大撮影枚数に達しました。処理を終了します。")
                 os.remove(screenshot_history[-1])
                 break
             # ページをめくる前に少し待機
             time.sleep(0.5)
-            # directionに従ってページをめくる
-            pyautogui.press(direction)
+            # directionに従ってページをめくる（AppleScript）
+            turn_page(direction)
             time.sleep(1.5)
     
     print("スクリーンショットの処理が完了しました。")
@@ -236,10 +225,6 @@ def main():
     print("PDFへの変換を開始します...")
     convert_to_pdf(safe_book_title)
 
-    # screenshot2audio.pyの処理を実行し音声に変換
-    # print("音声ファイルへの変換を開始します...")
-    # convert_to_audio(book_title) 
-    
     print("すべての処理が完了しました。")
 
 if __name__ == "__main__":
