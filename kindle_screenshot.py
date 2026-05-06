@@ -109,14 +109,20 @@ def take_screenshot(safe_book_title):
 def turn_page(direction: str = 'right'):
     """Kindleのページをめくる。directionは 'right' または 'left'。"""
     try:
+        print(f"ページめくり開始: {direction}")
         focus_kindle_window()
         if direction == 'left':
             key_code = 123  # 左矢印
         else:
             key_code = 124  # 右矢印（デフォルト）
         script = f'tell application "System Events" to key code {key_code}'
-        subprocess.run(["osascript", "-e", script], check=False,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"実行するAppleScript: {script}")
+        result = subprocess.run(["osascript", "-e", script], 
+                               capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"AppleScript実行エラー: {result.stderr}")
+        else:
+            print("AppleScript実行成功")
         time.sleep(1.8)
         return True
     except Exception as e:
@@ -191,7 +197,8 @@ def main():
             if screenshot_count >= 2:
                 # 直近の2枚の画像を比較
                 if compare_images(screenshot_history[-1], screenshot_history[-2]):
-                    if not reversed_once:
+                    # 最初の10ページ以内のみ逆方向判定を実行
+                    if screenshot_count <= 10 and not reversed_once:
                         print("同じページが検出されました。逆方向にページをめくります。")
                         os.remove(screenshot_history[-1])
                         direction = 'left'  # 方向を逆に
@@ -203,7 +210,7 @@ def main():
                         print("同じページが検出されたため、処理を終了します。")
                         os.remove(screenshot_history[-1])
                         break
-            if screenshot_count >= 1000:
+            if screenshot_count >= 5000:
                 print("最大撮影枚数に達しました。処理を終了します。")
                 os.remove(screenshot_history[-1])
                 break
