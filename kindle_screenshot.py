@@ -4,10 +4,11 @@ import os
 import random
 import re
 from datetime import datetime
+from pathlib import Path
 from dotenv import load_dotenv
 from PIL import Image
 import numpy as np
-from screenshot2pdf import convert_to_pdf
+from screenshot2pdf import convert_to_pdf, resolve_output_root
 import subprocess
 
 # 毎回の実行前に仮想環境を有効化する
@@ -80,8 +81,11 @@ def open_kindle():
         print("Kindleアプリケーションがインストールされているか確認してください。")
         return False
 
-def take_screenshot(safe_book_title):
-    """現在表示されているページのスクリーンショットを撮影する"""
+def take_screenshot(safe_book_title, output_root="screenshots_books"):
+    """現在表示されているページのスクリーンショットを撮影する
+
+    output_root の相対パスはスクリプトのあるディレクトリ基準で解決する。
+    """
     try:
         # Kindleウィンドウにフォーカスを当てる
         if not focus_kindle_window():
@@ -93,7 +97,7 @@ def take_screenshot(safe_book_title):
             
         # タイムスタンプ付きのファイル名を生成(書籍名のフォルダを作成して格納)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f'screenshots_books/{safe_book_title}/kindle_page_{timestamp}.png'
+        filename = str(resolve_output_root(output_root) / safe_book_title / f'kindle_page_{timestamp}.png')
         
         # スクリーンショットを撮影
         screenshot = pyautogui.screenshot()
@@ -153,42 +157,60 @@ def compare_images(image1_path, image2_path):
         print(f"画像比較中にエラーが発生しました: {e}")
         return False
 
-def main():    
-    # Kindleを開く
-    if not open_kindle():
-        return
+def capture_book(book_title, output_root="screenshots_books", make_pdf=True,
+                 on_page=None, should_stop=None, start_delay=5) -> Path:
+    """表示中の Kindle の本を最後のページまで撮影し、保存先フォルダを返す。
 
-    # ここでKindleウィンドウを最大化＆フォーカス（最初だけ）
-    maximize_kindle_window()
-    focus_kindle_window()
+    Kindle は事前に起動し、撮影したい本の冒頭ページを開いておくこと。
 
-    # 検索する本のタイトルを入力
-    print("スクリーンショットを開始します。")
-    book_title = input("検索する本のタイトルを入力してください: ")
+    Args:
+        book_title: 書籍名。sanitize_folder_name() でフォルダ名に変換する。
+        output_root: 保存先のルート。相対パスはこのスクリプトのあるディレクトリ基準
+            （どのディレクトリから import / 実行しても同じ場所に保存される）。
+        make_pdf: True なら撮影終了後（should_stop で止めた場合も）に、
+            そこまでの画像で convert_to_pdf() を実行する。
+        on_page: on_page(path: Path)。残す画像を1枚保存するたびに呼ぶ。
+            重複判定（同一ページ検出による方向反転・終了）と 5000 枚上限の判定を
+            済ませてから呼ぶため、削除される画像では呼ばれない。
+            呼ばれた画像が後で削除されることはない。
+        should_stop: should_stop() -> bool。各撮影の前とページめくりの前に呼び、
+            True ならループを抜ける。
+        start_delay: 撮影開始までの待機秒数（冒頭ページを表示するための猶予）。
+
+    Returns:
+        画像（と PDF）を保存したフォルダの Path（絶対パス）。
+    """
+    def stop_requested():
+        if should_stop is not None and should_stop():
+            print("停止が要求されたため、撮影を終了します。")
+            return True
+        return False
 
     # スクリーンショットを保存するディレクトリを作成
     safe_book_title = sanitize_folder_name(book_title)
     print(f"フォルダ名: {safe_book_title}")
-    if not os.path.exists(f'screenshots_books/{safe_book_title}'):
-        os.makedirs(f'screenshots_books/{safe_book_title}')
+    root = resolve_output_root(output_root)
+    book_dir = root / safe_book_title
+    book_dir.mkdir(parents=True, exist_ok=True)
 
     # スクリーンショットの履歴を保存
     screenshot_history = []
     screenshot_count = 0
-    
+
     # 最初のページを表示するための待機時間
     print("最初のページを表示するまで待機します...")
-    wait_time = 5
-    for i in range(wait_time, 0, -1):
+    for i in range(start_delay, 0, -1):
         print(f"残り {i} 秒...", end='\r')
         time.sleep(1)
     print("開始します！      ")  # 余分な空白で前の行を上書き
-    
+
     direction = 'right'  # 最初は右方向
     reversed_once = False
     while True:
+        if stop_requested():
+            break
         # スクリーンショットを撮影
-        current_screenshot = take_screenshot(safe_book_title)
+        current_screenshot = take_screenshot(safe_book_title, output_root=root)
         if current_screenshot:
             screenshot_history.append(current_screenshot)
             screenshot_count += 1
@@ -214,16 +236,39 @@ def main():
                 print("最大撮影枚数に達しました。処理を終了します。")
                 os.remove(screenshot_history[-1])
                 break
+            # 残すことが確定した画像を通知
+            if on_page is not None:
+                on_page(Path(current_screenshot))
             # ページをめくる前に少し待機
             time.sleep(0.5)
+            if stop_requested():
+                break
             # directionに従ってページをめくる（AppleScript）
             turn_page(direction)
             time.sleep(1.5)
-    
+
     print("スクリーンショットの処理が完了しました。")
-    # screenshot2pdf.pyの処理を実行しpdfに変換
-    print("PDFへの変換を開始します...")
-    convert_to_pdf(safe_book_title)
+    if make_pdf:
+        # screenshot2pdf.pyの処理を実行しpdfに変換
+        print("PDFへの変換を開始します...")
+        convert_to_pdf(safe_book_title, output_root=root)
+
+    return book_dir
+
+def main():
+    # Kindleを開く
+    if not open_kindle():
+        return
+
+    # ここでKindleウィンドウを最大化＆フォーカス（最初だけ）
+    maximize_kindle_window()
+    focus_kindle_window()
+
+    # 検索する本のタイトルを入力
+    print("スクリーンショットを開始します。")
+    book_title = input("検索する本のタイトルを入力してください: ")
+
+    capture_book(book_title)
 
     print("すべての処理が完了しました。")
 

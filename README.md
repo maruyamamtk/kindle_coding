@@ -82,7 +82,22 @@ source .venv/bin/activate && python kindle_screenshot.py
 ## 🛠 補足: スクリプト一覧
 
 - `kindle_screenshot.py` : メインのスクリーンショット撮影 & ページめくり → 最後に `convert_to_pdf` を呼ぶ
+  - 撮影ループは `capture_book()` として他のスクリプトから呼べます（Kindle は事前に起動し、冒頭ページを開いておく）:
+
+    ```python
+    from kindle_screenshot import capture_book
+
+    book_dir = capture_book(
+        "書名",
+        output_root="screenshots_books",  # 相対パスはスクリプトのあるディレクトリ基準
+        make_pdf=True,                    # 撮影後（途中停止時も）PDF 化する
+        on_page=lambda path: print(path), # 残す画像を1枚保存するたびに呼ばれる（削除される重複画像では呼ばれない）
+        should_stop=lambda: False,        # True を返すと撮影を止める
+        start_delay=5,                    # 撮影開始までの待機秒数
+    )  # 戻り値は保存先フォルダの Path
+    ```
 - `screenshot2pdf.py` : 画像フォルダから PDF を生成（分割ロジックあり）
+- `tests/test_capture_book.py` : `capture_book()` の単体テスト（Kindle は操作しない）。`python -m unittest discover -s tests -v` で実行
 - `making_booklist.py` : 本のリスト作成に関する補助スクリプト（必要に応じて確認してください）
 
 ---
