@@ -1,5 +1,6 @@
 from PIL import Image
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 # 毎回の実行前に仮想環境を有効化する
@@ -9,9 +10,19 @@ from dotenv import load_dotenv
 # 環境変数の読み込み
 load_dotenv()
 
-def convert_to_pdf(book_title):
-    # 入力ディレクトリ
-    input_dir = f'screenshots_books/{book_title}'
+# このスクリプトのあるディレクトリ（相対パスの基準）
+BASE_DIR = Path(__file__).resolve().parent
+
+def resolve_output_root(output_root="screenshots_books"):
+    """出力ルートを解決する。相対パスはこのスクリプトのあるディレクトリ基準。"""
+    root = Path(output_root).expanduser()
+    if not root.is_absolute():
+        root = BASE_DIR / root
+    return root
+
+def convert_to_pdf(book_title, output_root="screenshots_books"):
+    # 入力ディレクトリ（output_root の相対パスはこのスクリプトのあるディレクトリ基準）
+    input_dir = str(resolve_output_root(output_root) / book_title)
 
     # 対象拡張子
     image_extensions = [".png", ".jpg", ".jpeg"]
